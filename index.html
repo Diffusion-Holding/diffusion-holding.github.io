@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASCII Diffusion</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #e8e6dc;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  #canvas {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1;
+    color: #141413;
+    white-space: pre;
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+  }
+  #membrane {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background: transparent;
+    pointer-events: none;
+  }
+  body.dark { background: #141413; }
+  body.dark #canvas { color: #ffffff; }
+  body.dark #membrane { background: transparent; }
+  #toggle {
+    position: absolute;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    color: #141413;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    z-index: 10;
+  }
+  body.dark #toggle { color: #ffffff; }
+  #label {
+    position: absolute;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    color: #141413;
+    text-decoration: none;
+    z-index: 10;
+  }
+  #label:hover { text-decoration: none; }
+  body.dark #label { color: #ffffff; }
+</style>
+</head>
+<body>
+<pre id="canvas"></pre>
+<div id="membrane"></div>
+<button id="toggle"></button>
+<a id="label" href="mailto:info@diffusionholding.com">diffusion holding</a>
+<script>
+const CHAR_W = 8.4;
+const CHAR_H = 14;
+const PARTICLE_RADIUS = 0.8;
+const NUM_LEFT = 400;
+const NUM_RIGHT = 0;
+const DAMPING = 1;
+const COLLISION_RESPONSE = 1;
+const MEMBRANE_PASS_CHANCE = 0.2; // probability of passing through membrane
+const RIGHT_SPEED_MULT = 3; // speed multiplier for particles on the right side
+const LABEL_TEXT = 'diffusion holding';
+const LABEL_PAD_BOTTOM = 3;
+let labelRow, labelColStart, labelColEnd;
+let toggleRow, toggleColStart, toggleColEnd;
+
+let cols, rows;
+let particles = [];
+let membraneCol;
+function resize() {
+  cols = Math.floor(window.innerWidth / CHAR_W);
+  rows = Math.floor(window.innerHeight / CHAR_H);
+  membraneCol = Math.floor(cols / 2);
+  const labelPadRight = Math.round(LABEL_PAD_BOTTOM * (CHAR_H / CHAR_W));
+  labelRow = rows - 1 - LABEL_PAD_BOTTOM;
+  labelColStart = cols - LABEL_TEXT.length - labelPadRight;
+  labelColEnd = labelColStart + LABEL_TEXT.length - 1;
+  // toggle position (same row, left side)
+  toggleRow = labelRow;
+  toggleColStart = labelPadRight;
+  toggleColEnd = toggleColStart + 4; // "dark" or "light" max 5 chars
+}
+
+function isInUIZone(cx, cy) {
+  if (cy === labelRow && cx >= labelColStart && cx <= labelColEnd) return true;
+  if (cy === toggleRow && cx >= toggleColStart && cx <= toggleColEnd) return true;
+  return false;
+}
+
+function init() {
+  resize();
+  particles = [];
+
+  // left side particles
+  for (let i = 0; i < NUM_LEFT; i++) {
+    let x, y;
+    do {
+      x = Math.random() * (membraneCol - 2) + 1;
+      y = Math.random() * (rows - 2) + 1;
+    } while (isInUIZone(Math.round(x), Math.round(y)));
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 0.2,
+      vy: (Math.random() - 0.5) * 0.2,
+      char: '·',
+      mass: 0.5 + Math.random() * 1.5,
+      canPass: true
+    });
+  }
+
+  // right side particles
+  for (let i = 0; i < NUM_RIGHT; i++) {
+    let x, y;
+    do {
+      x = membraneCol + 2 + Math.random() * (cols - membraneCol - 4);
+      y = Math.random() * (rows - 2) + 1;
+    } while (isInUIZone(Math.round(x), Math.round(y)));
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 0.2,
+      vy: (Math.random() - 0.5) * 0.2,
+      char: '·',
+      mass: 0.5 + Math.random() * 1.5,
+      canPass: true
+    });
+  }
+}
+
+function resolveCollision(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const minDist = PARTICLE_RADIUS * 2;
+
+  if (dist < minDist && dist > 0.001) {
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    const dvx = a.vx - b.vx;
+    const dvy = a.vy - b.vy;
+    const dvn = dvx * nx + dvy * ny;
+
+    if (dvn > 0) {
+      const totalMass = a.mass + b.mass;
+      const impulse = (2 * dvn) / totalMass * COLLISION_RESPONSE;
+
+      a.vx -= impulse * b.mass * nx;
+      a.vy -= impulse * b.mass * ny;
+      b.vx += impulse * a.mass * nx;
+      b.vy += impulse * a.mass * ny;
+    }
+
+    const overlap = (minDist - dist) / 2;
+    a.x -= overlap * nx;
+    a.y -= overlap * ny;
+    b.x += overlap * nx;
+    b.y += overlap * ny;
+  }
+}
+
+function update() {
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    const prevX = p.x;
+    const prevY = p.y;
+    // clamp speed so particle moves at most ~1 cell per frame
+    const MAX_SPEED = 0.4;
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    if (speed > MAX_SPEED) {
+      const scale = MAX_SPEED / speed;
+      p.vx *= scale;
+      p.vy *= scale;
+    }
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= DAMPING;
+    p.vy *= DAMPING;
+
+    // membrane collision
+    const row = Math.round(p.y);
+    const crossingRight = prevX < membraneCol && p.x >= membraneCol;
+    const crossingLeft = prevX > membraneCol && p.x <= membraneCol;
+
+    if (crossingRight) {
+      if (Math.random() < MEMBRANE_PASS_CHANCE) {
+        // particle passes through
+      } else {
+        // reflect back
+        p.x = prevX;
+        p.vx = -p.vx * COLLISION_RESPONSE;
+      }
+    } else if (crossingLeft) {
+      // always reflect — no passing back
+      p.x = prevX;
+      p.vx = -p.vx * COLLISION_RESPONSE;
+    }
+
+    // wall bounce
+    if (p.x <= 0) { p.x = 0; p.vx = Math.abs(p.vx) * COLLISION_RESPONSE; }
+    if (p.x >= cols - 1) { p.x = cols - 1; p.vx = -Math.abs(p.vx) * COLLISION_RESPONSE; }
+    if (p.y <= 0) { p.y = 0; p.vy = Math.abs(p.vy) * COLLISION_RESPONSE; }
+    if (p.y >= rows - 1) { p.y = rows - 1; p.vy = -Math.abs(p.vy) * COLLISION_RESPONSE; }
+
+    // bounce off label text and toggle
+    const pr = Math.round(p.y);
+    const pc = Math.round(p.x);
+    if (pr === labelRow && pc >= labelColStart && pc <= labelColEnd) {
+      p.y = prevY;
+      p.x = prevX;
+      p.vy = -p.vy * COLLISION_RESPONSE;
+      p.vx = -p.vx * COLLISION_RESPONSE;
+    }
+    if (pr === toggleRow && pc >= toggleColStart && pc <= toggleColEnd) {
+      p.y = prevY;
+      p.x = prevX;
+      p.vy = -p.vy * COLLISION_RESPONSE;
+      p.vx = -p.vx * COLLISION_RESPONSE;
+    }
+
+    // particle-particle collisions
+    for (let j = i + 1; j < particles.length; j++) {
+      resolveCollision(p, particles[j]);
+    }
+  }
+
+}
+
+function render() {
+  const grid = [];
+  for (let r = 0; r < rows; r++) {
+    grid[r] = new Array(cols).fill(' ');
+  }
+
+  // position CSS membrane line
+  const memEl = document.getElementById('membrane');
+  memEl.style.left = (membraneCol * CHAR_W + CHAR_W / 2) + 'px';
+
+  // draw particles
+  for (const p of particles) {
+    const cx = Math.round(p.x);
+    const cy = Math.round(p.y);
+    if (cx >= 0 && cx < cols && cy >= 0 && cy < rows) {
+      if (cx !== membraneCol && !isInUIZone(cx, cy)) {
+        grid[cy][cx] = p.char;
+      }
+    }
+  }
+
+  // position label link
+  const labelEl = document.getElementById('label');
+  labelEl.style.left = (labelColStart * CHAR_W) + 'px';
+  labelEl.style.top = (labelRow * CHAR_H) + 'px';
+
+  const el = document.getElementById('canvas');
+  el.textContent = grid.map(row => row.join('')).join('\n');
+}
+
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', resize);
+
+// dark mode toggle
+let isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+const toggleEl = document.getElementById('toggle');
+
+function applyTheme() {
+  document.body.classList.toggle('dark', isDark);
+  toggleEl.textContent = isDark ? 'light' : 'dark';
+}
+
+function positionToggle() {
+  toggleEl.style.top = (toggleRow * CHAR_H) + 'px';
+  toggleEl.style.left = (toggleColStart * CHAR_W) + 'px';
+}
+
+toggleEl.addEventListener('click', () => {
+  isDark = !isDark;
+  applyTheme();
+});
+
+applyTheme();
+init();
+positionToggle();
+window.addEventListener('resize', () => { resize(); positionToggle(); });
+loop();
+</script>
+</body>
+</html>
