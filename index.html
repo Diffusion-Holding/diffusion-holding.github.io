@@ -82,6 +82,8 @@ let toggleRow, toggleColStart, toggleColEnd;
 let cols, rows;
 let particles = [];
 let membraneCol;
+let mouseX = -1, mouseY = -1;
+let cursorParticle = null;
 function resize() {
   cols = Math.floor(window.innerWidth / CHAR_W);
   rows = Math.floor(window.innerHeight / CHAR_H);
@@ -238,6 +240,39 @@ function update() {
     }
   }
 
+  // cursor particle: snap to grid, collide with others
+  if (mouseX >= 0 && mouseY >= 0) {
+    const prevCX = cursorParticle.x;
+    const prevCY = cursorParticle.y;
+    cursorParticle.x = mouseX;
+    cursorParticle.y = mouseY;
+    // derive velocity from movement for collision impulse
+    cursorParticle.vx = cursorParticle.x - prevCX;
+    cursorParticle.vy = cursorParticle.y - prevCY;
+    // collide with all particles
+    for (const p of particles) {
+      const dx = p.x - cursorParticle.x;
+      const dy = p.y - cursorParticle.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = PARTICLE_RADIUS * 2;
+      if (dist < minDist && dist > 0.001) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const dvx = cursorParticle.vx - p.vx;
+        const dvy = cursorParticle.vy - p.vy;
+        const dvn = dvx * nx + dvy * ny;
+        if (dvn > 0) {
+          // cursor has infinite effective mass — only the other particle moves
+          p.vx += dvn * nx;
+          p.vy += dvn * ny;
+        }
+        // push particle out of overlap
+        const overlap = minDist - dist;
+        p.x += overlap * nx;
+        p.y += overlap * ny;
+      }
+    }
+  }
 }
 
 function render() {
@@ -258,6 +293,15 @@ function render() {
       if (cx !== membraneCol && !isInUIZone(cx, cy)) {
         grid[cy][cx] = p.char;
       }
+    }
+  }
+
+  // draw cursor particle
+  if (mouseX >= 0 && mouseY >= 0) {
+    const cx = Math.round(cursorParticle.x);
+    const cy = Math.round(cursorParticle.y);
+    if (cx >= 0 && cx < cols && cy >= 0 && cy < rows && !isInUIZone(cx, cy)) {
+      grid[cy][cx] = '·';
     }
   }
 
@@ -296,6 +340,25 @@ toggleEl.addEventListener('click', () => {
   isDark = !isDark;
   applyTheme();
 });
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX / CHAR_W;
+  mouseY = e.clientY / CHAR_H;
+});
+document.addEventListener('mouseleave', () => {
+  mouseX = -1;
+  mouseY = -1;
+});
+
+// cursor particle — follows mouse, collides with others
+cursorParticle = {
+  x: -1, y: -1,
+  vx: 0, vy: 0,
+  char: '·',
+  mass: 2,
+  canPass: true,
+  isCursor: true
+};
 
 applyTheme();
 init();
