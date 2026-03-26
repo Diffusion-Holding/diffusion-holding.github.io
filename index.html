@@ -68,11 +68,11 @@
 const CHAR_W = 8.4;
 const CHAR_H = 14;
 const PARTICLE_RADIUS = 0.8;
-const NUM_LEFT = 400;
+const NUM_LEFT = 250;
 const NUM_RIGHT = 0;
 const DAMPING = 1;
 const COLLISION_RESPONSE = 1;
-const MEMBRANE_PASS_CHANCE = 0.2; // probability of passing through membrane
+const MEMBRANE_PASS_CHANCE = 0.08; // probability of passing through membrane
 const RIGHT_SPEED_MULT = 3; // speed multiplier for particles on the right side
 const LABEL_TEXT = 'diffusion holding';
 const LABEL_PAD_BOTTOM = 3;
@@ -117,8 +117,8 @@ function init() {
     } while (isInUIZone(Math.round(x), Math.round(y)));
     particles.push({
       x, y,
-      vx: (Math.random() - 0.5) * 0.2,
-      vy: (Math.random() - 0.5) * 0.2,
+      vx: (Math.random() - 0.5) * 0.12,
+      vy: (Math.random() - 0.5) * 0.12,
       char: '·',
       mass: 0.5 + Math.random() * 1.5,
       canPass: true
@@ -134,8 +134,8 @@ function init() {
     } while (isInUIZone(Math.round(x), Math.round(y)));
     particles.push({
       x, y,
-      vx: (Math.random() - 0.5) * 0.2,
-      vy: (Math.random() - 0.5) * 0.2,
+      vx: (Math.random() - 0.5) * 0.12,
+      vy: (Math.random() - 0.5) * 0.12,
       char: '·',
       mass: 0.5 + Math.random() * 1.5,
       canPass: true
@@ -296,14 +296,7 @@ function render() {
     }
   }
 
-  // draw cursor particle
-  if (mouseX >= 0 && mouseY >= 0) {
-    const cx = Math.round(cursorParticle.x);
-    const cy = Math.round(cursorParticle.y);
-    if (cx >= 0 && cx < cols && cy >= 0 && cy < rows && !isInUIZone(cx, cy)) {
-      grid[cy][cx] = '·';
-    }
-  }
+  // cursor particle is invisible but still collides
 
   // position label link
   const labelEl = document.getElementById('label');
